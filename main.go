@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
 	// "gopkg.in/libgit2/git2go.v27"
 	//	"net/http"
@@ -38,6 +39,7 @@ func (err *EventNotFound) Error() string {
 const (
 	PROJECTS_BUCKET = "projects"
 	COMMITS_BUCKET  = "commits"
+	EVENTS_BUCKET   = "events"
 )
 
 func dbOpen(path string) (*bolt.DB, error) {
@@ -48,10 +50,15 @@ func dbOpen(path string) (*bolt.DB, error) {
 	err = db.Update(func(tx *bolt.Tx) error {
 		_, err := tx.CreateBucketIfNotExists([]byte(PROJECTS_BUCKET))
 		if err != nil {
-
+			return err
 		}
 
 		_, err = tx.CreateBucketIfNotExists([]byte(COMMITS_BUCKET))
+		if err != nil {
+			return err
+		}
+
+		_, err = tx.CreateBucketIfNotExists([]byte(EVENTS_BUCKET))
 		return err
 	})
 	if err != nil {
@@ -134,12 +141,109 @@ func dbStoreNewCommit(db *bolt.DB, commit *Commit, eventId *uuid.UUID) error {
 	})
 }
 
+func dbGetEvent(db *bolt.DB, eventId *uuid.UUID) (*Event, error) {
+	event := new(Event)
+
+	err := db.View(func(tx *bolt.Tx) error {
+		eventBucket := tx.Bucket([]byte(EVENTS_BUCKET))
+
+		eventBytes := eventBucket.Get(eventId.Bytes())
+		if eventBytes == nil {
+			return new(EventNotFound)
+		}
+		return json.Unmarshal(eventBytes, event)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return event, nil
+}
+
+func initEvent(db *bolt.DB, eventId *uuid.UUID, eventName *string) error {
+	return db.Update(func(tx *bolt.Tx) error {
+		commitBucket := tx.Bucket([]byte(COMMITS_BUCKET))
+		projectBucket := tx.Bucket([]byte(PROJECTS_BUCKET))
+		eventBucket := tx.Bucket([]byte(EVENTS_BUCKET))
+
+		event := &Event{
+			Id:   *eventId,
+			Name: *eventName,
+		}
+		eventBytes, err := json.Marshal(event)
+		if err != nil {
+			return err
+		}
+		err = eventBucket.Put(eventId.Bytes(), eventBytes)
+		if err != nil {
+			return err
+		}
+
+		emptyBytes := []byte("[]")
+		err = commitBucket.Put(eventId.Bytes(), emptyBytes)
+		if err != nil {
+			return err
+		}
+		return projectBucket.Put(eventId.Bytes(), emptyBytes)
+	})
+}
+
 func main() {
 	r := gin.Default()
+	main_key := "42"
 
-	r.GET("/api/commits", func(c *gin.Context) {
+	db, err := dbOpen("db/progress-logger.db")
+	if err != nil {
+		fmt.Println("Error opening DB: ", err)
+		return
+	}
+
+	r.GET("/api/:eventId/commits", func(c *gin.Context) {
+		eventId, err := uuid.FromString(c.Param("eventId"))
+		fmt.Println(eventId)
+		if err != nil {
+			c.AbortWithStatus(400)
+			return
+		}
+
+		commits, err := dbGetCommits(db, &eventId)
+		if _, ok := err.(*EventNotFound); ok {
+			c.AbortWithStatus(404)
+		} else if err != nil {
+			c.AbortWithError(500, err)
+			return
+		}
+
 		c.JSON(200, gin.H{
-			"commits": "wtf",
+			"commits": commits,
+		})
+	})
+	r.POST("/api/create", func(c *gin.Context) {
+		key := c.PostForm("key")
+		eventName := c.PostForm("name")
+		fmt.Println(key)
+
+		if eventName == "" {
+			c.AbortWithStatus(400)
+			return
+		}
+		if key != main_key {
+			c.AbortWithStatus(403)
+			return
+		}
+
+		eventId, err := uuid.NewV4()
+		if err != nil {
+			c.AbortWithError(500, err)
+			return
+		}
+		err = initEvent(db, &eventId, &eventName)
+		if err != nil {
+			c.AbortWithError(500, err)
+			return
+		}
+		c.JSON(200, gin.H{
+			"eventId": eventId,
 		})
 	})
 	r.Run()
