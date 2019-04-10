@@ -61,9 +61,41 @@ func dbOpen(path string) (*bolt.DB, error) {
 	return db, nil
 }
 
-//func dbStoreProject(db *bolt.DB, project *Project, eventId *uuid.UUID) error {
-//	return db.Update(func
-//}
+func dbGetProjects(db *bolt.DB, eventId *uuid.UUID) ([]Project, error) {
+	var projectList []Project
+
+	err := db.View(func(tx *bolt.Tx) error {
+		projectBucket := tx.Bucket([]byte(PROJECTS_BUCKET))
+
+		projectBytes := projectBucket.Get(eventId.Bytes())
+		if projectBytes == nil {
+			return new(EventNotFound)
+		}
+		return json.Unmarshal(projectBytes, &projectList)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return projectList, nil
+}
+
+func dbStoreProject(db *bolt.DB, project *Project, eventId *uuid.UUID) error {
+	projectList, err := dbGetProjects(db, eventId)
+	if err != nil {
+		return err
+	}
+
+	projectList = append(projectList, *project)
+	return db.Update(func(tx *bolt.Tx) error {
+		projectBucket := tx.Bucket([]byte(PROJECTS_BUCKET))
+		projectBytes, err := json.Marshal(&projectList)
+		if err != nil {
+			return err
+		}
+		return projectBucket.Put(eventId.Bytes(), projectBytes)
+	})
+}
 
 func dbGetCommits(db *bolt.DB, eventId *uuid.UUID) ([]Commit, error) {
 	var commitList []Commit
