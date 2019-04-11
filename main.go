@@ -4,17 +4,15 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	// "gopkg.in/libgit2/git2go.v27"
-	//	"net/http"
-	"encoding/json"
+	// "encoding/json"
 	"github.com/satori/go.uuid"
-	bolt "go.etcd.io/bbolt"
 	"time"
 )
 
 type Project struct {
-	URL     string   `json:"url"`
-	Name    string   `json:"name"`
-	Authors []string `json:"authors"`
+	URL     string   `json:"url" binding:"required"`
+	Name    string   `json:"name" binding:"required"`
+	Authors []string `json:"authors" binding:"required"`
 }
 
 type Commit struct {
@@ -25,8 +23,14 @@ type Commit struct {
 }
 
 type Event struct {
-	Name string    `json:"name"`
-	Id   uuid.UUID `json:"id"`
+	Name     string    `json:"name"`
+	Id       uuid.UUID `json:"id"`
+	Projects []Project `json:"projects"`
+}
+
+type EventRequest struct {
+	Name string `json:"name" binding:"required"`
+	Key  string `json:"key" binding:"required"`
 }
 
 type EventNotFound struct {
@@ -34,158 +38,6 @@ type EventNotFound struct {
 
 func (err *EventNotFound) Error() string {
 	return "no such event"
-}
-
-const (
-	PROJECTS_BUCKET = "projects"
-	COMMITS_BUCKET  = "commits"
-	EVENTS_BUCKET   = "events"
-)
-
-func dbOpen(path string) (*bolt.DB, error) {
-	db, err := bolt.Open(path, 0666, nil)
-	if err != nil {
-		return nil, err
-	}
-	err = db.Update(func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists([]byte(PROJECTS_BUCKET))
-		if err != nil {
-			return err
-		}
-
-		_, err = tx.CreateBucketIfNotExists([]byte(COMMITS_BUCKET))
-		if err != nil {
-			return err
-		}
-
-		_, err = tx.CreateBucketIfNotExists([]byte(EVENTS_BUCKET))
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return db, nil
-}
-
-func dbGetProjects(db *bolt.DB, eventId *uuid.UUID) ([]Project, error) {
-	var projectList []Project
-
-	err := db.View(func(tx *bolt.Tx) error {
-		projectBucket := tx.Bucket([]byte(PROJECTS_BUCKET))
-
-		projectBytes := projectBucket.Get(eventId.Bytes())
-		if projectBytes == nil {
-			return new(EventNotFound)
-		}
-		return json.Unmarshal(projectBytes, &projectList)
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return projectList, nil
-}
-
-func dbStoreProject(db *bolt.DB, project *Project, eventId *uuid.UUID) error {
-	projectList, err := dbGetProjects(db, eventId)
-	if err != nil {
-		return err
-	}
-
-	projectList = append(projectList, *project)
-	return db.Update(func(tx *bolt.Tx) error {
-		projectBucket := tx.Bucket([]byte(PROJECTS_BUCKET))
-		projectBytes, err := json.Marshal(&projectList)
-		if err != nil {
-			return err
-		}
-		return projectBucket.Put(eventId.Bytes(), projectBytes)
-	})
-}
-
-func dbGetCommits(db *bolt.DB, eventId *uuid.UUID) ([]Commit, error) {
-	var commitList []Commit
-
-	err := db.View(func(tx *bolt.Tx) error {
-		commitBucket := tx.Bucket([]byte(COMMITS_BUCKET))
-
-		commitsBytes := commitBucket.Get(eventId.Bytes())
-		if commitsBytes == nil {
-			return new(EventNotFound)
-		}
-		return json.Unmarshal(commitsBytes, &commitList)
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return commitList, nil
-}
-
-func dbStoreNewCommit(db *bolt.DB, commit *Commit, eventId *uuid.UUID) error {
-	commitList, err := dbGetCommits(db, eventId)
-	if err != nil {
-		return err
-	}
-	commitList = append(commitList, *commit)
-
-	return db.Update(func(tx *bolt.Tx) error {
-		commitBucket := tx.Bucket([]byte(COMMITS_BUCKET))
-
-		commitBytes, err := json.Marshal(&commitList)
-		if err != nil {
-			return err
-		}
-		return commitBucket.Put(eventId.Bytes(), commitBytes)
-	})
-}
-
-func dbGetEvent(db *bolt.DB, eventId *uuid.UUID) (*Event, error) {
-	event := new(Event)
-
-	err := db.View(func(tx *bolt.Tx) error {
-		eventBucket := tx.Bucket([]byte(EVENTS_BUCKET))
-
-		eventBytes := eventBucket.Get(eventId.Bytes())
-		if eventBytes == nil {
-			return new(EventNotFound)
-		}
-		return json.Unmarshal(eventBytes, event)
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return event, nil
-}
-
-func initEvent(db *bolt.DB, eventId *uuid.UUID, eventName *string) error {
-	return db.Update(func(tx *bolt.Tx) error {
-		commitBucket := tx.Bucket([]byte(COMMITS_BUCKET))
-		projectBucket := tx.Bucket([]byte(PROJECTS_BUCKET))
-		eventBucket := tx.Bucket([]byte(EVENTS_BUCKET))
-
-		event := &Event{
-			Id:   *eventId,
-			Name: *eventName,
-		}
-		eventBytes, err := json.Marshal(event)
-		if err != nil {
-			return err
-		}
-		err = eventBucket.Put(eventId.Bytes(), eventBytes)
-		if err != nil {
-			return err
-		}
-
-		emptyBytes := []byte("[]")
-		err = commitBucket.Put(eventId.Bytes(), emptyBytes)
-		if err != nil {
-			return err
-		}
-		return projectBucket.Put(eventId.Bytes(), emptyBytes)
-	})
 }
 
 func main() {
@@ -198,9 +50,62 @@ func main() {
 		return
 	}
 
-	r.GET("/api/:eventId/commits", func(c *gin.Context) {
+	r.POST("/api/event", func(c *gin.Context) {
+		var eventRequest EventRequest
+		if err := c.ShouldBindJSON(&eventRequest); err != nil {
+			c.AbortWithError(500, err)
+			return
+		}
+
+		if eventRequest.Name == "" {
+			c.AbortWithStatus(400)
+			return
+		}
+		if eventRequest.Key != main_key {
+			c.AbortWithStatus(403)
+			return
+		}
+
+		eventId, err := uuid.NewV4()
+		if err != nil {
+			c.AbortWithError(500, err)
+			return
+		}
+		err = initEvent(db, &eventId, &eventRequest.Name)
+		if err != nil {
+			c.AbortWithError(500, err)
+			return
+		}
+		c.JSON(200, gin.H{
+			"eventId": eventId,
+		})
+	})
+
+	r.PUT("/api/event/:eventId/register", func(c *gin.Context) {
 		eventId, err := uuid.FromString(c.Param("eventId"))
-		fmt.Println(eventId)
+		if err != nil {
+			c.AbortWithStatus(404)
+			return
+		}
+		var project Project
+		if err := c.ShouldBindJSON(&project); err != nil {
+			c.AbortWithError(500, err)
+			return
+		}
+		_, err = dbGetProject(db, &project.URL)
+		if _, ok := err.(*EventNotFound); ok {
+			err := dbStoreProject(db, &project)
+			if err != nil {
+				return
+			}
+			dbAddProjectToEvent(db, &eventId, &project)
+		}
+
+		c.JSON(200, gin.H{})
+	})
+
+	r.GET("/api/event/:eventId/commits", func(c *gin.Context) {
+		eventId, err := uuid.FromString(c.Param("eventId"))
 		if err != nil {
 			c.AbortWithStatus(400)
 			return
@@ -218,33 +123,27 @@ func main() {
 			"commits": commits,
 		})
 	})
-	r.POST("/api/create", func(c *gin.Context) {
-		key := c.PostForm("key")
-		eventName := c.PostForm("name")
-		fmt.Println(key)
 
-		if eventName == "" {
+	r.GET("/api/event/:eventId", func(c *gin.Context) {
+		eventId, err := uuid.FromString(c.Param("eventId"))
+		if err != nil {
 			c.AbortWithStatus(400)
 			return
 		}
-		if key != main_key {
-			c.AbortWithStatus(403)
+		event, err := dbGetEvent(db, &eventId)
+		if _, ok := err.(*EventNotFound); ok {
+			c.AbortWithStatus(404)
+		} else if err != nil {
+			c.AbortWithError(500, err)
 			return
 		}
 
-		eventId, err := uuid.NewV4()
 		if err != nil {
 			c.AbortWithError(500, err)
 			return
 		}
-		err = initEvent(db, &eventId, &eventName)
-		if err != nil {
-			c.AbortWithError(500, err)
-			return
-		}
-		c.JSON(200, gin.H{
-			"eventId": eventId,
-		})
+
+		c.JSON(200, event)
 	})
 	r.Run()
 }
