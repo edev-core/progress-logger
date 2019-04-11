@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/gin-gonic/gin"
-	// "gopkg.in/libgit2/git2go.v27"
+	// "github.com/src-d/go-git"
 	// "encoding/json"
 	"github.com/satori/go.uuid"
 	"time"
