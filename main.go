@@ -6,13 +6,22 @@ import (
 	// "github.com/src-d/go-git"
 	// "encoding/json"
 	"github.com/satori/go.uuid"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strconv"
 	"time"
+)
+
+const (
+	GIT_PATH = "repos"
 )
 
 type Project struct {
 	URL     string   `json:"url" binding:"required"`
 	Name    string   `json:"name" binding:"required"`
 	Authors []string `json:"authors" binding:"required"`
+	Path    string   `json:"path"`
 }
 
 type Commit struct {
@@ -71,6 +80,12 @@ func main() {
 			c.AbortWithError(500, err)
 			return
 		}
+		eventPath := filepath.Join(GIT_PATH, eventId.ToString())
+		err = os.Mkdir(eventPath, os.ModePerm)
+		if err != nil {
+			c.AbortWithError(500, err)
+			return
+		}
 		err = initEvent(db, &eventId, &eventRequest.Name)
 		if err != nil {
 			c.AbortWithError(500, err)
@@ -81,7 +96,7 @@ func main() {
 		})
 	})
 
-	r.PUT("/api/event/:eventId/register", func(c *gin.Context) {
+	r.POST("/api/event/:eventId/project", func(c *gin.Context) {
 		eventId, err := uuid.FromString(c.Param("eventId"))
 		if err != nil {
 			c.AbortWithStatus(404)
@@ -92,6 +107,18 @@ func main() {
 			c.AbortWithError(500, err)
 			return
 		}
+		projectUrl, err := url.Parse(project.URL)
+		if err != nil {
+			c.AbortWithError(500, err)
+			return
+		}
+		project.Path = filepath.Join(GIT_PATH, eventId.ToString(), projectUrl.Hostname, projectUrl.Path)
+		err = os.MkdirAll(project.Path, os.ModePerm)
+		if err != nil {
+			c.AbortWithError(500, err)
+			return err
+		}
+
 		_, err = dbGetProject(db, &project.URL)
 		if _, ok := err.(*EventNotFound); ok {
 			err := dbStoreProject(db, &project)
@@ -105,6 +132,14 @@ func main() {
 	})
 
 	r.GET("/api/event/:eventId/commits", func(c *gin.Context) {
+		rawPage := c.DefaultQuery("page", "0")
+		rawLimit := c.DefaultQuery("limit", "25")
+
+		pageInt, _ := strconv.Atoi(rawPage)
+		limitInt, _ := strconv.Atoi(rawLimit)
+		page := uint32(pageInt)
+		limit := uint32(limitInt)
+
 		eventId, err := uuid.FromString(c.Param("eventId"))
 		if err != nil {
 			c.AbortWithStatus(400)
@@ -112,11 +147,23 @@ func main() {
 		}
 
 		commits, err := dbGetCommits(db, &eventId)
+
 		if _, ok := err.(*EventNotFound); ok {
 			c.AbortWithStatus(404)
 		} else if err != nil {
 			c.AbortWithError(500, err)
 			return
+		}
+		commitCount := uint32(len(commits))
+		start := page * limit
+		if start > commitCount {
+			commits = nil
+		} else {
+			if start+limit > commitCount {
+				commits = commits[start:]
+			} else {
+				commits = commits[start : start+limit]
+			}
 		}
 
 		c.JSON(200, gin.H{
