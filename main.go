@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/gin-gonic/gin"
-	// "github.com/src-d/go-git"
+	"gopkg.in/src-d/go-git.v4"
 	// "encoding/json"
 	"github.com/satori/go.uuid"
 	"net/url"
@@ -114,6 +114,14 @@ func main() {
 		}
 		project.Path = filepath.Join(GIT_PATH, eventId.String(), projectUrl.Hostname(), projectUrl.Path)
 		err = os.MkdirAll(project.Path, os.ModePerm)
+		if err != nil {
+			c.AbortWithError(500, err)
+			return
+		}
+
+		_, err = git.PlainClone(project.Path, false, &git.CloneOptions{
+			URL: project.URL,
+		})
 		if err != nil {
 			c.AbortWithError(500, err)
 			return
