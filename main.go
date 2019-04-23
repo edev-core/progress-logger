@@ -80,7 +80,7 @@ func main() {
 			c.AbortWithError(500, err)
 			return
 		}
-		eventPath := filepath.Join(GIT_PATH, eventId.ToString())
+		eventPath := filepath.Join(GIT_PATH, eventId.String())
 		err = os.Mkdir(eventPath, os.ModePerm)
 		if err != nil {
 			c.AbortWithError(500, err)
@@ -112,11 +112,11 @@ func main() {
 			c.AbortWithError(500, err)
 			return
 		}
-		project.Path = filepath.Join(GIT_PATH, eventId.ToString(), projectUrl.Hostname, projectUrl.Path)
+		project.Path = filepath.Join(GIT_PATH, eventId.String(), projectUrl.Hostname(), projectUrl.Path)
 		err = os.MkdirAll(project.Path, os.ModePerm)
 		if err != nil {
 			c.AbortWithError(500, err)
-			return err
+			return
 		}
 
 		_, err = dbGetProject(db, &project.URL)
