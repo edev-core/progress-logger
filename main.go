@@ -12,9 +12,18 @@ const (
 	GIT_PATH = "repos"
 )
 
+type TrackingCommand int
+
+const (
+	STOP_TRACKING TrackingCommand = 1
+	POLL          TrackingCommand = 2
+)
+
 func main() {
 	r := gin.Default()
 	main_key := "42"
+	trackedEvents := make(map[uuid.UUID]chan TrackingCommand)
+	quit := make(chan struct{})
 
 	db, err := dbOpen("db/progress-logger.db")
 	if err != nil {
@@ -124,18 +133,16 @@ func main() {
 			c.AbortWithStatus(400)
 			return
 		}
-		event, err := dbGetEvent(db, &eventId)
-		if _, ok := err.(*EventNotFound); ok {
-			c.AbortWithStatus(404)
-		} else if err != nil {
-			c.AbortWithError(500, err)
-			return
-		}
 
 		if eventMod.Track {
-			fmt.Println("Some things should go there")
-			_ = event
+			trackedEvents[eventId] = make(chan TrackingCommand)
+			go TrackEvent(&eventId, trackedEvents[eventId], quit)
+		} else {
+			trackedEvents[eventId] <- STOP_TRACKING
+			delete(trackedEvents, eventId)
 		}
+
+		c.JSON(200, gin.H{})
 	})
 	r.Run()
 }

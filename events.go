@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -107,5 +108,26 @@ func FetchCommits(db *bolt.DB, page uint32, limit uint32, eventId *uuid.UUID) ([
 		return commits[0:end], nil
 	} else {
 		return commits[end-limit : end], nil
+	}
+}
+
+func TrackEvent(eventId *uuid.UUID, commands chan TrackingCommand, quit chan struct{}) {
+	ticker := time.NewTicker(3 * time.Second)
+	for {
+		select {
+		case <-ticker.C:
+			fmt.Println("Would poll")
+		case command := <-commands:
+			switch command {
+			case STOP_TRACKING:
+				ticker.Stop()
+				return
+			default:
+				fmt.Println("Invalid command: ", command)
+			}
+		case <-quit:
+			ticker.Stop()
+			return
+		}
 	}
 }
