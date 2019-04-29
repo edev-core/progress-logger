@@ -130,6 +130,7 @@ func TrackEvent(db *bolt.DB, eventId *uuid.UUID, commands chan TrackingCommand, 
 			event, err := dbGetEvent(db, eventId)
 			if err != nil {
 				fmt.Println("Can't retrieve event")
+				return
 			}
 			event.PollCommits(db)
 		case command := <-commands:

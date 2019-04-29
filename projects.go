@@ -31,7 +31,7 @@ func (p *Project) RetrieveNewCommits(db *bolt.DB, eventId *uuid.UUID) error {
 	}
 	pullOpts := new(git.PullOptions)
 	err = worktree.Pull(pullOpts)
-	if _, ok := err.(*git.NoErrAlreadyUpToDate); !ok {
+	if err != git.NoErrAlreadyUpToDate {
 		return err
 	}
 	cIter, err := repo.Log(&git.LogOptions{From: plumbing.NewHash(p.LastCommit)})
