@@ -41,6 +41,7 @@ func (p *Project) RetrieveNewCommits(db *bolt.DB, eventId *uuid.UUID) error {
 
 		return nil
 	})
+	return dbStoreProject(db, p)
 }
 
 func RegisterProject(db *bolt.DB, eventId *uuid.UUID, project *Project) error {
