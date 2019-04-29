@@ -115,6 +115,7 @@ func (e *Event) PollCommits(db *bolt.DB) error {
 	for _, project := range e.Projects {
 		err := project.RetrieveNewCommits(db, &e.Id)
 		if err != nil {
+			fmt.Println("Error in polling: ", err)
 			return err
 		}
 	}
