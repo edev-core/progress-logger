@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 
 	uuid "github.com/satori/go.uuid"
 	bolt "go.etcd.io/bbolt"
@@ -13,11 +14,12 @@ import (
 )
 
 type Project struct {
-	URL        string   `json:"url" binding:"required"`
-	Name       string   `json:"name" binding:"required"`
-	Authors    []string `json:"authors" binding:"required"`
-	Path       string   `json:"path"`
-	LastCommit string   `json:"last_commit"`
+	URL            string    `json:"url" binding:"required"`
+	Name           string    `json:"name" binding:"required"`
+	Authors        []string  `json:"authors" binding:"required"`
+	Path           string    `json:"path"`
+	LastCommit     string    `json:"last_commit"`
+	LastCommitTime time.Time `json:"last_commit_date"`
 }
 
 func (p *Project) RetrieveNewCommits(db *bolt.DB, eventId *uuid.UUID) error {
@@ -40,7 +42,10 @@ func (p *Project) RetrieveNewCommits(db *bolt.DB, eventId *uuid.UUID) error {
 	}
 
 	return cIter.ForEach(func(c *object.Commit) error {
-		p.LastCommit = c.Hash.String()
+		if c.Author.When.After(p.LastCommitTime) {
+			p.LastCommit = c.Hash.String()
+			p.LastCommitTime = c.Author.When
+		}
 		dbStoreNewCommit(db,
 			&Commit{Project: p.Name,
 				Author:  c.Author.Name,
