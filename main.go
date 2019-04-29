@@ -136,7 +136,7 @@ func main() {
 
 		if eventMod.Track {
 			trackedEvents[eventId] = make(chan TrackingCommand)
-			go TrackEvent(&eventId, trackedEvents[eventId], quit)
+			go TrackEvent(db, &eventId, trackedEvents[eventId], quit)
 		} else {
 			trackedEvents[eventId] <- STOP_TRACKING
 			delete(trackedEvents, eventId)

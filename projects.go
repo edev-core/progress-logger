@@ -8,6 +8,7 @@ import (
 	uuid "github.com/satori/go.uuid"
 	bolt "go.etcd.io/bbolt"
 	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 )
 
@@ -17,6 +18,29 @@ type Project struct {
 	Authors    []string `json:"authors" binding:"required"`
 	Path       string   `json:"path"`
 	LastCommit string   `json:"last_commit"`
+}
+
+func (p *Project) RetrieveNewCommits(db *bolt.DB, eventId *uuid.UUID) error {
+	repo, err := git.PlainOpen(p.Path)
+	if err != nil {
+		return err
+	}
+	cIter, err := repo.Log(&git.LogOptions{From: plumbing.NewHash(p.LastCommit)})
+	if err != nil {
+		return err
+	}
+
+	return cIter.ForEach(func(c *object.Commit) error {
+		p.LastCommit = c.Hash.String()
+		dbStoreNewCommit(db,
+			&Commit{Project: p.Name,
+				Author:  c.Author.Name,
+				Message: c.Message,
+				Date:    c.Author.When},
+			eventId)
+
+		return nil
+	})
 }
 
 func RegisterProject(db *bolt.DB, eventId *uuid.UUID, project *Project) error {
@@ -45,21 +69,11 @@ func RegisterProject(db *bolt.DB, eventId *uuid.UUID, project *Project) error {
 	if err != nil {
 		return err
 	}
-	cIter, err := repo.Log(&git.LogOptions{From: ref.Hash()})
+	project.LastCommit = ref.Hash().String()
+	err = project.RetrieveNewCommits(db, eventId)
 	if err != nil {
 		return err
 	}
-	err = cIter.ForEach(func(c *object.Commit) error {
-		project.LastCommit = c.Hash.String()
-		dbStoreNewCommit(db,
-			&Commit{Project: project.Name,
-				Author:  c.Author.Name,
-				Message: c.Message,
-				Date:    c.Author.When},
-			eventId)
-
-		return nil
-	})
 
 	// Checks if a project with the same url does not exist
 	_, err = dbGetProject(db, &project.URL)
