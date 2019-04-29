@@ -1,7 +1,7 @@
 package main
 
 import (
-	//"fmt"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -44,14 +44,16 @@ func (p *Project) RetrieveNewCommits(db *bolt.DB, eventId *uuid.UUID) error {
 	}
 
 	lastCommitTime := p.LastCommitTime
-	return cIter.ForEach(func(c *object.Commit) error {
+	err = cIter.ForEach(func(c *object.Commit) error {
 		if c.Author.When.After(p.LastCommitTime) {
 			p.LastCommit = c.Hash.String()
 			p.LastCommitTime = c.Author.When
+			fmt.Println("Most recent ?")
 		}
 		if !c.Author.When.After(lastCommitTime) {
 			return nil
 		}
+		fmt.Println(c)
 		dbStoreNewCommit(db,
 			&Commit{Project: p.Name,
 				Author:  c.Author.Name,
@@ -61,6 +63,10 @@ func (p *Project) RetrieveNewCommits(db *bolt.DB, eventId *uuid.UUID) error {
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	fmt.Println("Retained Last commit: ", p.LastCommit)
 	return dbStoreProject(db, p)
 }
 
