@@ -111,5 +111,31 @@ func main() {
 
 		c.JSON(200, event)
 	})
+
+	r.PUT("/api/event/:eventId", func(c *gin.Context) {
+		eventId, err := uuid.FromString(c.Param("eventId"))
+		if err != nil {
+			c.AbortWithStatus(400)
+			return
+		}
+		// Check if the eventModification is valid JSON
+		var eventMod EventModification
+		if err := c.ShouldBindJSON(&eventMod); err != nil {
+			c.AbortWithStatus(400)
+			return
+		}
+		event, err := dbGetEvent(db, &eventId)
+		if _, ok := err.(*EventNotFound); ok {
+			c.AbortWithStatus(404)
+		} else if err != nil {
+			c.AbortWithError(500, err)
+			return
+		}
+
+		if eventMod.Track {
+			fmt.Println("Some things should go there")
+			_ = event
+		}
+	})
 	r.Run()
 }

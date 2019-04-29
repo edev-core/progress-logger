@@ -27,6 +27,10 @@ type EventRequest struct {
 	Key  string `json:"key" binding:"required"`
 }
 
+type EventModification struct {
+	Track bool `json:"track"`
+}
+
 type EventNotFound struct {
 }
 
