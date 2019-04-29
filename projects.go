@@ -1,6 +1,7 @@
 package main
 
 import (
+	//"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -9,7 +10,7 @@ import (
 	uuid "github.com/satori/go.uuid"
 	bolt "go.etcd.io/bbolt"
 	"gopkg.in/src-d/go-git.v4"
-	"gopkg.in/src-d/go-git.v4/plumbing"
+	//"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 )
 
@@ -36,15 +37,20 @@ func (p *Project) RetrieveNewCommits(db *bolt.DB, eventId *uuid.UUID) error {
 	if err != git.NoErrAlreadyUpToDate {
 		return err
 	}
-	cIter, err := repo.Log(&git.LogOptions{From: plumbing.NewHash(p.LastCommit)})
+	cIter, err := repo.Log(&git.LogOptions{
+		Order: git.LogOrderCommitterTime})
 	if err != nil {
 		return err
 	}
 
+	lastCommitTime := p.LastCommitTime
 	return cIter.ForEach(func(c *object.Commit) error {
 		if c.Author.When.After(p.LastCommitTime) {
 			p.LastCommit = c.Hash.String()
 			p.LastCommitTime = c.Author.When
+		}
+		if !c.Author.When.After(lastCommitTime) {
+			return nil
 		}
 		dbStoreNewCommit(db,
 			&Commit{Project: p.Name,
