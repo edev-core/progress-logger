@@ -44,6 +44,7 @@ func (p *Project) RetrieveNewCommits(db *bolt.DB, eventId *uuid.UUID) error {
 		return err
 	}
 
+	newCommits := make([]Commit, 0)
 	lastCommitTime := p.LastCommitTime
 	err = cIter.ForEach(func(c *object.Commit) error {
 		if c.Author.When.After(p.LastCommitTime) {
@@ -55,17 +56,18 @@ func (p *Project) RetrieveNewCommits(db *bolt.DB, eventId *uuid.UUID) error {
 			return nil
 		}
 		fmt.Println(c)
-		dbStoreNewCommit(db,
-			&Commit{Project: p.Name,
+		newCommits = append(newCommits,
+			Commit{Project: p.Name,
 				Author:  c.Author.Name,
 				Message: c.Message,
-				Date:    c.Author.When},
-			eventId)
-
+				Date:    c.Author.When})
 		return nil
 	})
 	if err != nil {
 		return err
+	}
+	for i := len(newCommits) - 1; i >= 0; i-- {
+		dbStoreNewCommit(db, &newCommits[i], eventId)
 	}
 	fmt.Println("Retained Last commit: ", p.LastCommit)
 	return dbStoreProject(db, p)
