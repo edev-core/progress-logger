@@ -1,23 +1,26 @@
 package main
 
 import (
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 
 	uuid "github.com/satori/go.uuid"
 	bolt "go.etcd.io/bbolt"
 	"gopkg.in/src-d/go-git.v4"
-	"gopkg.in/src-d/go-git.v4/plumbing"
+	//"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 )
 
 type Project struct {
-	URL        string   `json:"url" binding:"required"`
-	Name       string   `json:"name" binding:"required"`
-	Authors    []string `json:"authors" binding:"required"`
-	Path       string   `json:"path"`
-	LastCommit string   `json:"last_commit"`
+	URL            string    `json:"url" binding:"required"`
+	Name           string    `json:"name" binding:"required"`
+	Authors        []string  `json:"authors" binding:"required"`
+	Path           string    `json:"path"`
+	LastCommit     string    `json:"last_commit"`
+	LastCommitTime time.Time `json:"last_commit_date"`
 }
 
 func (p *Project) RetrieveNewCommits(db *bolt.DB, eventId *uuid.UUID) error {
@@ -25,13 +28,32 @@ func (p *Project) RetrieveNewCommits(db *bolt.DB, eventId *uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-	cIter, err := repo.Log(&git.LogOptions{From: plumbing.NewHash(p.LastCommit)})
+	worktree, err := repo.Worktree()
+	if err != nil {
+		return err
+	}
+	pullOpts := new(git.PullOptions)
+	err = worktree.Pull(pullOpts)
+	if err != git.NoErrAlreadyUpToDate {
+		return err
+	}
+	cIter, err := repo.Log(&git.LogOptions{
+		Order: git.LogOrderCommitterTime})
 	if err != nil {
 		return err
 	}
 
-	return cIter.ForEach(func(c *object.Commit) error {
-		p.LastCommit = c.Hash.String()
+	lastCommitTime := p.LastCommitTime
+	err = cIter.ForEach(func(c *object.Commit) error {
+		if c.Author.When.After(p.LastCommitTime) {
+			p.LastCommit = c.Hash.String()
+			p.LastCommitTime = c.Author.When
+			fmt.Println("Most recent ?")
+		}
+		if !c.Author.When.After(lastCommitTime) {
+			return nil
+		}
+		fmt.Println(c)
 		dbStoreNewCommit(db,
 			&Commit{Project: p.Name,
 				Author:  c.Author.Name,
@@ -41,6 +63,11 @@ func (p *Project) RetrieveNewCommits(db *bolt.DB, eventId *uuid.UUID) error {
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	fmt.Println("Retained Last commit: ", p.LastCommit)
+	return dbStoreProject(db, p)
 }
 
 func RegisterProject(db *bolt.DB, eventId *uuid.UUID, project *Project) error {

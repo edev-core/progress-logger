@@ -115,6 +115,7 @@ func (e *Event) PollCommits(db *bolt.DB) error {
 	for _, project := range e.Projects {
 		err := project.RetrieveNewCommits(db, &e.Id)
 		if err != nil {
+			fmt.Println("Error in polling: ", err)
 			return err
 		}
 	}
@@ -122,15 +123,20 @@ func (e *Event) PollCommits(db *bolt.DB) error {
 }
 
 func TrackEvent(db *bolt.DB, eventId *uuid.UUID, commands chan TrackingCommand, quit chan struct{}) {
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	for {
 		select {
 		case <-ticker.C:
 			event, err := dbGetEvent(db, eventId)
 			if err != nil {
 				fmt.Println("Can't retrieve event")
+				return
 			}
-			event.PollCommits(db)
+			err = event.PollCommits(db)
+			if err != nil {
+				fmt.Println("Failure to poll:", err)
+				return
+			}
 		case command := <-commands:
 			switch command {
 			case STOP_TRACKING:
