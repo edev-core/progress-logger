@@ -112,7 +112,7 @@ func dbAddProjectToEvent(db *bolt.DB, eventId *uuid.UUID, project *Project) erro
 	if err != nil {
 		return err
 	}
-	event.Projects = append(event.Projects, *project)
+	event.Projects = append(event.Projects, project.URL)
 	return db.Update(func(tx *bolt.Tx) error {
 		eventBucket := tx.Bucket([]byte(EVENTS_BUCKET))
 

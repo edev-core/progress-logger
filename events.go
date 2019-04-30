@@ -20,7 +20,7 @@ type Commit struct {
 type Event struct {
 	Name     string    `json:"name"`
 	Id       uuid.UUID `json:"id"`
-	Projects []Project `json:"projects"`
+	Projects []string  `json:"projects"`
 }
 
 type EventRequest struct {
