@@ -15,6 +15,7 @@ import (
 )
 
 type Project struct {
+	Id             uuid.UUID `json:"id"`
 	URL            string    `json:"url" binding:"required"`
 	Name           string    `json:"name" binding:"required"`
 	Authors        []string  `json:"authors" binding:"required"`
@@ -70,49 +71,50 @@ func (p *Project) RetrieveNewCommits(db *bolt.DB, eventId *uuid.UUID) error {
 	return dbStoreProject(db, p)
 }
 
-func RegisterProject(db *bolt.DB, eventId *uuid.UUID, project *Project) error {
+func RegisterProject(db *bolt.DB, eventId *uuid.UUID, project *Project) (*uuid.UUID, error) {
 	// Checking that the url is valid
 	projectUrl, err := url.Parse(project.URL)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	// Checks if a project with the same url does not exist
+	_, err = dbGetProject(db, &project.Id)
+	if _, ok := err.(*EventNotFound); !ok {
+		return nil, err
 	}
 
 	// Creating the file path where the git repo will be stored
 	project.Path = filepath.Join(GIT_PATH, eventId.String(), projectUrl.Hostname(), projectUrl.Path)
 	err = os.MkdirAll(project.Path, os.ModePerm)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	projectId, err := uuid.NewV4()
+	if err != nil {
+		return nil, err
+	}
+	project.Id = projectId
 
 	// Cloning the git repo
 	repo, err := git.PlainClone(project.Path, false, &git.CloneOptions{
 		URL: project.URL,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// Fetching all commits since the first one
 	ref, err := repo.Head()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	project.LastCommit = ref.Hash().String()
 	err = project.RetrieveNewCommits(db, eventId)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// Checks if a project with the same url does not exist
-	_, err = dbGetProject(db, &project.URL)
-	if _, ok := err.(*EventNotFound); ok {
-		// If it is a new project store it
-		err := dbStoreProject(db, project)
-		if err != nil {
-			return err
-		}
-		// And keep track of it in the event
-		dbAddProjectToEvent(db, eventId, project)
-	}
+	err = dbStoreProject(db, project)
+	dbAddProjectToEvent(db, eventId, project)
 
-	return nil
+	return &projectId, nil
 }

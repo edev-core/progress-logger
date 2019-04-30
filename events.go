@@ -18,9 +18,9 @@ type Commit struct {
 }
 
 type Event struct {
-	Name     string    `json:"name"`
-	Id       uuid.UUID `json:"id"`
-	Projects []string  `json:"projects"`
+	Name     string      `json:"name"`
+	Id       uuid.UUID   `json:"id"`
+	Projects []uuid.UUID `json:"projects"`
 }
 
 type EventRequest struct {
@@ -112,8 +112,12 @@ func FetchCommits(db *bolt.DB, page uint32, limit uint32, eventId *uuid.UUID) ([
 }
 
 func (e *Event) PollCommits(db *bolt.DB) error {
-	for _, project := range e.Projects {
-		err := project.RetrieveNewCommits(db, &e.Id)
+	for _, projectId := range e.Projects {
+		project, err := dbGetProject(db, &projectId)
+		if err != nil {
+			return err
+		}
+		err = project.RetrieveNewCommits(db, &e.Id)
 		if err != nil {
 			fmt.Println("Error in polling: ", err)
 			return err

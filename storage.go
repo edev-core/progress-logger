@@ -38,13 +38,13 @@ func dbOpen(path string) (*bolt.DB, error) {
 	return db, nil
 }
 
-func dbGetProject(db *bolt.DB, url *string) (*Project, error) {
+func dbGetProject(db *bolt.DB, projectId *uuid.UUID) (*Project, error) {
 	project := new(Project)
 
 	err := db.View(func(tx *bolt.Tx) error {
 		projectBucket := tx.Bucket([]byte(PROJECTS_BUCKET))
 
-		projectBytes := projectBucket.Get([]byte(*url))
+		projectBytes := projectBucket.Get(projectId.Bytes())
 		if projectBytes == nil {
 			return new(EventNotFound)
 		}
@@ -61,12 +61,11 @@ func dbStoreProject(db *bolt.DB, project *Project) error {
 	return db.Update(func(tx *bolt.Tx) error {
 		projectBucket := tx.Bucket([]byte(PROJECTS_BUCKET))
 
-		urlBytes := []byte(project.URL)
 		projectBytes, err := json.Marshal(project)
 		if err != nil {
 			return err
 		}
-		return projectBucket.Put(urlBytes, projectBytes)
+		return projectBucket.Put(project.Id.Bytes(), projectBytes)
 	})
 }
 
@@ -112,7 +111,7 @@ func dbAddProjectToEvent(db *bolt.DB, eventId *uuid.UUID, project *Project) erro
 	if err != nil {
 		return err
 	}
-	event.Projects = append(event.Projects, project.URL)
+	event.Projects = append(event.Projects, project.Id)
 	return db.Update(func(tx *bolt.Tx) error {
 		eventBucket := tx.Bucket([]byte(EVENTS_BUCKET))
 

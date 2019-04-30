@@ -49,7 +49,7 @@ func main() {
 		})
 	})
 
-	r.POST("/api/event/:eventId/project", func(c *gin.Context) {
+	r.POST("/api/event/:eventId/projects", func(c *gin.Context) {
 		// Check that the eventId is a valid UUID
 		eventId, err := uuid.FromString(c.Param("eventId"))
 		if err != nil {
@@ -65,13 +65,15 @@ func main() {
 		}
 
 		// Registers a new project
-		err = RegisterProject(db, &eventId, &project)
+		projectId, err := RegisterProject(db, &eventId, &project)
 		if err != nil {
 			c.AbortWithError(500, err)
 			return
 		}
 
-		c.JSON(200, gin.H{})
+		c.JSON(200, gin.H{
+			"projectId": *projectId,
+		})
 	})
 
 	r.GET("/api/event/:eventId/commits", func(c *gin.Context) {
